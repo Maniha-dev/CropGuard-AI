@@ -46,7 +46,7 @@ The snapshot Streamlit app is kept in `app.py`. The live browser-camera app is `
 
 The first load can be slow because Streamlit Cloud needs to install PyTorch and load the model. The free tier has limited RAM, which may constrain model loading and image processing.
 
-The live camera uses Google STUN by default. Some networks require an authenticated TURN relay. Get TURN URLs and credentials from a TURN provider, then add them under **App settings > Secrets** in Streamlit Cloud. Do not commit these credentials. Use this format:
+The live camera tries Google STUN and the public Metered OpenRelay demo TURN server. That public relay is best-effort and may be slow, rate-limited, or unavailable. For a dependable deployment, get TURN URLs and temporary credentials from a TURN provider, then add them under **App settings > Secrets** in Streamlit Cloud. Do not commit provider credentials. Use this format:
 
 ```toml
 [turn]
@@ -55,7 +55,7 @@ username = "provider-issued-username"
 credential = "provider-issued-credential"
 ```
 
-The app keeps STUN enabled and adds the TURN server when all three values are valid. TURN credentials are passed to the browser as part of WebRTC, so use provider-issued temporary/session credentials, not a permanent account password or API key. There is no guaranteed public free TURN relay; provider free tiers and quotas can change. Without TURN credentials, camera access may still fail on restrictive networks.
+The app keeps STUN enabled and prefers your configured TURN server when all three values are valid. TURN credentials are passed to the browser as part of WebRTC, so use provider-issued temporary/session credentials, not a permanent account password or API key. Without working TURN credentials, camera access may still fail on restrictive networks. The Linux deployment installs headless OpenCV; Windows installs regular OpenCV so local camera-window tools remain available.
 
 Run locally from the repository root in PowerShell:
 

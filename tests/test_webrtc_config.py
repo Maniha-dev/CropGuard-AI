@@ -1,10 +1,15 @@
 import pytest
 
-from src.webrtc_config import STUN_SERVER, build_rtc_configuration
+from src.webrtc_config import PUBLIC_TURN_SETTINGS, STUN_SERVER, build_rtc_configuration
 
 
-def test_rtc_configuration_uses_stun_without_turn_settings():
-    assert build_rtc_configuration() == {"iceServers": [{"urls": [STUN_SERVER]}]}
+def test_rtc_configuration_uses_stun_and_public_turn_fallback():
+    configuration = build_rtc_configuration()
+
+    assert configuration["iceServers"] == [
+        {"urls": [STUN_SERVER]},
+        PUBLIC_TURN_SETTINGS,
+    ]
 
 
 def test_rtc_configuration_adds_authenticated_turn_servers():

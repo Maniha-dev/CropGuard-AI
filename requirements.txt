@@ -2,7 +2,8 @@
 torch
 torchvision
 ultralytics>=8.4,<9
-opencv-python
+opencv-python-headless; platform_system == "Linux"
+opencv-python; platform_system != "Linux"
 streamlit
 streamlit-webrtc
 av

@@ -1,10 +1,19 @@
 STUN_SERVER = "stun:stun.l.google.com:19302"
+PUBLIC_TURN_SETTINGS = {
+    "urls": [
+        "turn:openrelay.metered.ca:80",
+        "turn:openrelay.metered.ca:443",
+        "turn:openrelay.metered.ca:443?transport=tcp",
+    ],
+    "username": "openrelayproject",
+    "credential": "openrelayproject",
+}
 
 
 def build_rtc_configuration(turn_settings=None):
     ice_servers = [{"urls": [STUN_SERVER]}]
     if not turn_settings:
-        return {"iceServers": ice_servers}
+        turn_settings = PUBLIC_TURN_SETTINGS
 
     urls = turn_settings.get("urls", [])
     if isinstance(urls, str):
