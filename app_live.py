@@ -2,11 +2,13 @@
 import av
 import cv2
 import streamlit as st
+from streamlit.errors import StreamlitSecretNotFoundError
 from streamlit_webrtc import webrtc_streamer
 
 from src.decision.spray_decision import REQUIRED_FRAMES, SprayDecision
 from src.detection.detector import load_model
 from src.detection.inference import detect_frame
+from src.webrtc_config import build_rtc_configuration
 
 
 RUN_MODEL_EVERY = 3
@@ -36,6 +38,17 @@ def get_state():
 model = get_model()
 state = get_state()
 state["confidence_threshold"] = confidence_threshold
+
+try:
+    turn_settings = st.secrets.get("turn", {})
+except StreamlitSecretNotFoundError:
+    turn_settings = {}
+
+try:
+    rtc_configuration = build_rtc_configuration(turn_settings)
+except ValueError as error:
+    st.warning(f"TURN is not configured correctly; using STUN only. {error}")
+    rtc_configuration = build_rtc_configuration()
 
 
 def callback(frame: av.VideoFrame) -> av.VideoFrame:
@@ -86,6 +99,6 @@ webrtc_streamer(
     key="cropguard-live",
     video_frame_callback=callback,
     media_stream_constraints={"video": True, "audio": False},
-    rtc_configuration={"iceServers": [{"urls": ["stun:stun.l.google.com:19302"]}]},
+    rtc_configuration=rtc_configuration,
     async_processing=True,
 )

@@ -14,7 +14,7 @@ python -m pip install -r requirements.txt
 
 The dataset is stored under `dataset/` with `train/`, `valid/`, `test/`, and `collected/` folders. `dataset/data.yaml` uses paths relative to the YAML file.
 
-The pretrained YOLOv8 nano model is `models/pretrained/yolov8n.pt`. After training, place the best checkpoint at `models/trained/cropguard_yolov8n_best.pt` for evaluation, test prediction, and simulation.
+The pretrained YOLOv8 nano model is `models/pretrained/yolov8n.pt`. The trained checkpoint is `models/trained/best.pt` and is used for evaluation, test prediction, simulation, and the Streamlit app.
 
 ## Commands
 
@@ -32,6 +32,38 @@ Training, evaluation, prediction, and simulation outputs are stored under `resul
 The simulation uses a confidence threshold of `0.60`. A detection must meet or exceed that threshold for 3 consecutive frames before the overlay changes to `SPRAY`; otherwise it shows `DON'T SPRAY`. A missing or low-confidence detection resets the counter.
 
 This is software simulation only. It does not activate GPIO, relays, pumps, pesticide systems, or other physical hardware.
+
+The snapshot Streamlit app is kept in `app.py`. The live browser-camera app is `app_live.py`; it runs model inference every third video frame.
+
+## Deploy on Streamlit Cloud
+
+1. Push this repository to GitHub.
+2. Go to [share.streamlit.io](https://share.streamlit.io) and sign in.
+3. Select **Create app**.
+4. Choose `Maniha-dev/CropGuard-AI`, branch `main`, and main file path `app_live.py`.
+5. In **Advanced settings**, select Python `3.12`.
+6. Select **Deploy**.
+
+The first load can be slow because Streamlit Cloud needs to install PyTorch and load the model. The free tier has limited RAM, which may constrain model loading and image processing.
+
+The live camera uses Google STUN by default. Some networks require an authenticated TURN relay. Get TURN URLs and credentials from a TURN provider, then add them under **App settings > Secrets** in Streamlit Cloud. Do not commit these credentials. Use this format:
+
+```toml
+[turn]
+urls = ["turn:your-provider.example:3478?transport=udp", "turns:your-provider.example:443?transport=tcp"]
+username = "provider-issued-username"
+credential = "provider-issued-credential"
+```
+
+The app keeps STUN enabled and adds the TURN server when all three values are valid. TURN credentials are passed to the browser as part of WebRTC, so use provider-issued temporary/session credentials, not a permanent account password or API key. There is no guaranteed public free TURN relay; provider free tiers and quotas can change. Without TURN credentials, camera access may still fail on restrictive networks.
+
+Run locally from the repository root in PowerShell:
+
+```powershell
+python -m pip install -r requirements.txt
+streamlit run app_live.py
+python -m pytest tests -q
+```
 
 ## Structure
 
