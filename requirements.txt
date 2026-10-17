@@ -1,5 +1,8 @@
-ultralytics
+--extra-index-url https://download.pytorch.org/whl/cpu
+torch
+torchvision
+ultralytics>=8.4,<9
 opencv-python
-matplotlib
-pandas
-scikit-learn
+streamlit
+streamlit-webrtc
+av
