@@ -1,0 +1,11 @@
+.git
+.venv
+__pycache__
+*.pyc
+dataset
+results
+runs
+tests
+structure_before_refactor.txt
+.streamlit
+models/pretrained

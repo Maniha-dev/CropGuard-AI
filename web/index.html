@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CropGuard-AI Live</title>
+<style>
+  :root { --bg:#0f1218; --card:#1a1f29; --text:#f2f4f8; --muted:#9aa4b2; --green:#12a150; --red:#e5251b; }
+  * { box-sizing: border-box; }
+  body { margin:0; font-family: system-ui, sans-serif; background:var(--bg); color:var(--text); }
+  main { max-width: 720px; margin: 0 auto; padding: 14px; }
+  h1 { font-size: 1.25rem; margin: 4px 0 2px; }
+  .sub { color: var(--muted); font-size: .85rem; margin-bottom: 12px; }
+  .stage { position: relative; background:#000; border-radius: 12px; overflow: hidden; min-height: 180px; }
+  video { width: 100%; display: block; }
+  #overlay { position:absolute; inset:0; width:100%; height:100%; pointer-events:none; }
+  #banner { margin-top: 10px; padding: 14px; border-radius: 12px; text-align: center; background: var(--card); }
+  #banner.ok { background: var(--green); }
+  #banner.spray { background: var(--red); }
+  #decision { font-size: 2rem; font-weight: 800; letter-spacing: .5px; }
+  #status { font-size: 1rem; opacity: .95; }
+  .row { display:flex; gap:10px; align-items:center; margin-top: 10px; flex-wrap: wrap; }
+  button { font-size: 1rem; padding: 10px 18px; border-radius: 10px; border: 0; background:#3b82f6; color:#fff; cursor:pointer; }
+  button.stop { background:#6b7280; }
+  .stats { color: var(--muted); font-size: .85rem; margin-top: 8px; }
+  #error { margin-top: 10px; color:#ffb4ab; font-size: .9rem; white-space: pre-wrap; }
+  label { font-size: .85rem; color: var(--muted); }
+</style>
+</head>
+<body>
+<main>
+  <h1>CropGuard-AI: Live Pest Detection</h1>
+  <div class="sub">Simulation only. No pump or hardware is controlled.</div>
+
+  <div class="stage">
+    <video id="video" autoplay playsinline muted></video>
+    <canvas id="overlay"></canvas>
+  </div>
+
+  <div id="banner">
+    <div id="decision">DON'T SPRAY</div>
+    <div id="status">Press Start camera</div>
+  </div>
+
+  <div class="row">
+    <button id="toggle">Start camera</button>
+    <label>Box confidence <input id="conf" type="range" min="0.1" max="0.95" step="0.05" value="0.6">
+      <span id="confValue">0.60</span></label>
+  </div>
+  <div class="stats" id="stats"></div>
+  <div id="error"></div>
+</main>
+
+<canvas id="grab" hidden></canvas>
+<script>
+const $ = (id) => document.getElementById(id);
+const video = $("video"), overlay = $("overlay"), grab = $("grab");
+const MAX_WIDTH = 480;          // frames are shrunk before upload: less data, faster on free CPU
+const MIN_INTERVAL_MS = 120;    // never send more than ~8 frames per second
+const sessionId = ((self.crypto && crypto.randomUUID) ? crypto.randomUUID() : String(Math.random()).slice(2))
+  .replace(/[^A-Za-z0-9_-]/g, "").slice(0, 40);
+
+let stream = null, running = false, frames = 0, startedAt = 0;
+
+$("conf").addEventListener("input", () => { $("confValue").textContent = Number($("conf").value).toFixed(2); });
+$("toggle").addEventListener("click", () => (running ? stopCamera() : startCamera()));
+
+function showError(msg) { $("error").textContent = msg || ""; }
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+async function startCamera() {
+  showError("");
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+    showError("This browser cannot open the camera. Open the page over HTTPS.");
+    return;
+  }
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode: { ideal: "environment" }, width: { ideal: 640 } }, audio: false,
+    });
+  } catch (e) {
+    showError(e.name === "NotAllowedError"
+      ? "Camera permission was denied. Allow the camera for this site and try again."
+      : "Could not open the camera: " + e.message);
+    return;
+  }
+  video.srcObject = stream;
+  await video.play();
+  running = true; frames = 0; startedAt = performance.now();
+  $("toggle").textContent = "Stop camera"; $("toggle").classList.add("stop");
+  $("status").textContent = "Starting detection...";
+  loop();
+}
+
+function stopCamera() {
+  running = false;
+  if (stream) stream.getTracks().forEach((t) => t.stop());
+  video.srcObject = null;
+  overlay.getContext("2d").clearRect(0, 0, overlay.width, overlay.height);
+  $("toggle").textContent = "Start camera"; $("toggle").classList.remove("stop");
+  setBanner("DON'T SPRAY", "Camera stopped", "");
+}
+
+async function loop() {
+  while (running) {
+    const t0 = performance.now();
+    if (document.hidden || video.readyState < 2 || !video.videoWidth) { await sleep(200); continue; }
+
+    const scale = Math.min(1, MAX_WIDTH / video.videoWidth);
+    grab.width = Math.round(video.videoWidth * scale);
+    grab.height = Math.round(video.videoHeight * scale);
+    grab.getContext("2d").drawImage(video, 0, 0, grab.width, grab.height);
+    const blob = await new Promise((r) => grab.toBlob(r, "image/jpeg", 0.7));
+
+    const form = new FormData();
+    form.append("image", blob, "frame.jpg");
+    try {
+      const url = `/detect?session=${sessionId}&confidence=${$("conf").value}`;
+      const res = await fetch(url, { method: "POST", body: form });
+      if (!res.ok) throw new Error("Server answered " + res.status);
+      const data = await res.json();
+      if (!running) break;      // camera was stopped while this request was in flight
+      render(data);
+      showError("");
+    } catch (e) {
+      showError("Cannot reach the server (" + e.message + "). Retrying...");
+      await sleep(1500);
+    }
+    // wait for the answer before sending the next frame, so a slow server is never flooded
+    await sleep(Math.max(0, MIN_INTERVAL_MS - (performance.now() - t0)));
+  }
+}
+
+function setBanner(decision, status, cls) {
+  $("decision").textContent = decision;
+  $("status").textContent = status;
+  $("banner").className = cls;
+}
+
+function render(d) {
+  frames += 1;
+  const spray = d.decision === "SPRAY";
+  const status = d.pest_detected
+    ? `PEST DETECTED (${(d.highest_confidence * 100).toFixed(0)}%)  |  confirmed ${Math.min(d.confirmed_frames, d.required_frames)}/${d.required_frames}`
+    : "NO PEST";
+  setBanner(d.decision, status, spray ? "spray" : "ok");
+
+  // draw boxes in the coordinates of the frame that was sent
+  overlay.width = d.image.width; overlay.height = d.image.height;
+  const ctx = overlay.getContext("2d");
+  ctx.clearRect(0, 0, overlay.width, overlay.height);
+  ctx.lineWidth = Math.max(2, overlay.width / 160);
+  ctx.font = `bold ${Math.max(12, overlay.width / 28)}px sans-serif`;
+  ctx.strokeStyle = ctx.fillStyle = "#22ff66";
+  for (const det of d.detections) {
+    const b = det.box;
+    ctx.strokeRect(b.x1, b.y1, b.x2 - b.x1, b.y2 - b.y1);
+    ctx.fillText(`Pest ${det.confidence.toFixed(2)}`, b.x1, Math.max(14, b.y1 - 6));
+  }
+  const fps = frames / ((performance.now() - startedAt) / 1000);
+  $("stats").textContent = `Model time ${d.inference_ms} ms  |  ${fps.toFixed(1)} updates/s`;
+}
+</script>
+</body>
+</html>
